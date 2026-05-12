@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="auth-wrapper">
+    <div class="modern-card auth-card">
+        <h4>Create Account</h4>
+        <p>Get started with Synapse Time</p>
+        
+        {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+        
+        <form method="post">
+            <input name="username" class="form-control" placeholder="Username" required autofocus>
+            <input type="password" name="password" class="form-control" placeholder="Password" required>
+            <button class="btn-custom btn-success" style="width: 100%; margin-top: 0.5rem;">Register</button>
+        </form>
+        
+        <a href="/login" class="link-muted">Already have an account? Log in</a>
+    </div>
+</div>
+{% endblock %}

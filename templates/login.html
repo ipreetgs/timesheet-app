@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="auth-wrapper">
+    <div class="modern-card auth-card">
+        <h4>Welcome Back</h4>
+        <p>Sign in to your account</p>
+        
+        {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+        
+        <form method="post">
+            <input name="username" class="form-control" placeholder="Username" required autofocus>
+            <input type="password" name="password" class="form-control" placeholder="Password" required>
+            <button class="btn-custom" style="width: 100%; margin-top: 0.5rem;">Login</button>
+        </form>
+        
+        <a href="/signup" class="link-muted">Don't have an account? Sign up</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.28rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.18s, transform 0.12s;
+}
+.action-btn:active { transform: scale(0.96); }
+.btn-edit-action {
+    background: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+}
+.btn-edit-action:hover { background: #dbeafe; }
+.btn-delete-action {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+    margin-left: 4px;
+}
+.btn-delete-action:hover { background: #fee2e2; }
+.tc-badge {
+    font-family: monospace;
+    font-size: 0.75rem;
+    background: #f3f4f6;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    color: #374151;
+}
+</style>
+
+<div class="modern-card">
+    <div class="header-actions">
+        <h4 style="margin:0; font-weight:700;">Admin Dashboard</h4>
+    </div>
+
+    <form method="get" class="filters-row">
+        <!-- Resource filter -->
+        <div style="flex:1;">
+            <select name="resource" class="form-select">
+                <option value="">All Users</option>
+                {% for u in users %}
+                <option value="{{ u.username }}" {% if selected_resource == u.username %}selected{% endif %}>{{ u.username }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Week filter -->
+        <div style="flex:1;">
+            <input type="week" name="week" class="form-control" value="{{ selected_week }}">
+        </div>
+
+        <!-- Project filter -->
+        <div style="flex:1;">
+            <input type="text" name="project" class="form-control" placeholder="Filter by project…" value="{{ selected_project }}">
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn-custom filter-btn">Apply Filters</button>
+            <a href="/admin" class="btn-custom" style="background:#f1f5f9; color:var(--text-main);">Clear</a>
+        </div>
+    </form>
+
+    <div class="table-wrapper">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Project</th>
+                    <th>Task</th>
+                    <th>TC ID</th>
+                    <th>Week</th>
+                    <th style="text-align:center;">Mon</th>
+                    <th style="text-align:center;">Tue</th>
+                    <th style="text-align:center;">Wed</th>
+                    <th style="text-align:center;">Thu</th>
+                    <th style="text-align:center;">Fri</th>
+                    <th style="text-align:center;">Sat</th>
+                    <th style="text-align:center;">Sun</th>
+                    <th style="text-align:right; padding-right:1.5rem;">Total Hrs</th>
+                    <th style="text-align:center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    <td style="font-weight:600;">{{ row.resource }}</td>
+                    <td>{{ row.project }}</td>
+                    <td>{{ row.task }}</td>
+                    <td>
+                        {% if row.test_case_id %}
+                            <span class="tc-badge">{{ row.test_case_id }}</span>
+                        {% else %}
+                            <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ row.week }}</td>
+                    <td style="text-align:center;">{{ row.mon or 0 }}</td>
+                    <td style="text-align:center;">{{ row.tue or 0 }}</td>
+                    <td style="text-align:center;">{{ row.wed or 0 }}</td>
+                    <td style="text-align:center;">{{ row.thu or 0 }}</td>
+                    <td style="text-align:center;">{{ row.fri or 0 }}</td>
+                    <td style="text-align:center;">{{ row.sat or 0 }}</td>
+                    <td style="text-align:center;">{{ row.sun or 0 }}</td>
+                    <td style="text-align:right; padding-right:1.5rem; font-weight:700;">{{ row.total or 0 }}</td>
+                    <td style="text-align:center; white-space:nowrap;">
+                        <a href="/edit/{{ row.id }}" class="action-btn btn-edit-action">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Edit
+                        </a>
+                        <form method="post" action="/delete/{{ row.id }}" style="display:inline;"
+                              onsubmit="return confirm('Delete this record?')">
+                            <button type="submit" class="action-btn btn-delete-action">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="14" style="text-align:center; padding:3rem; color:var(--text-muted);">No records found.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

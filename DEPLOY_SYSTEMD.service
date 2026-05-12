@@ -1,0 +1,21 @@
+[Unit]
+Description=Gunicorn instance to serve Timesheet App
+After=network.target
+
+[Service]
+# Replace 'ubuntu' with your server's username if different
+User=ubuntu
+Group=www-data
+
+# Path to the actual python application footprint
+WorkingDirectory=/var/www/timesheet
+Environment="PATH=/var/www/timesheet/venv/bin"
+
+# IMPORTANT: Where our DB strictly lives so it's not overridden
+Environment="DATABASE_PATH=/var/www/timesheet/persistent_data/database.db"
+
+# Fire up Gunicorn binding to unix socket timesheet.sock 
+ExecStart=/var/www/timesheet/venv/bin/gunicorn --workers 3 --bind unix:timesheet.sock -m 007 app:app
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+.project-block {
+    margin-bottom: 2rem;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+}
+.project-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.25rem;
+    background: linear-gradient(90deg, var(--primary, #6366f1) 0%, #818cf8 100%);
+    color: #fff;
+}
+.project-title {
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.project-title svg { opacity: 0.85; }
+.btn-add-task {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.35);
+    color: #fff;
+    border-radius: 7px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.btn-add-task:hover { background: rgba(255,255,255,0.32); }
+.btn-remove-row {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted, #9ca3af);
+    padding: 0.2rem 0.4rem;
+    border-radius: 6px;
+    transition: color 0.2s, background 0.2s;
+}
+.btn-remove-row:hover { background: #fee2e2; color: #ef4444; }
+.search-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.search-bar svg {
+    position: absolute;
+    left: 10px;
+    color: var(--text-muted, #9ca3af);
+    pointer-events: none;
+}
+.search-bar input {
+    padding-left: 2.2rem !important;
+}
+.no-results-hint {
+    text-align: center;
+    padding: 1.5rem;
+    color: var(--text-muted, #9ca3af);
+    font-size: 0.9rem;
+    display: none;
+}
+input[name="tc_id"] { min-width: 100px; font-family: monospace; font-size: 0.82rem; }
+</style>
+
+<div class="header-actions mt-4">
+    <h4 style="margin:0; font-weight:700;">My Timesheet</h4>
+    <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+        <!-- Week picker -->
+        <input type="week" id="week" value="{{ week }}" class="form-control" style="width:auto;"
+               onchange="window.location.search = '?week='+this.value">
+
+        <!-- Client-side project filter -->
+        <div class="search-bar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="projectSearch" class="form-control" placeholder="Filter by project…"
+                   oninput="filterProjects(this.value)" style="width:180px;">
+        </div>
+
+        <!-- Add Project -->
+        <button class="btn-custom" onclick="addProject()" style="background:var(--primary,#6366f1);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Project
+        </button>
+
+        <!-- Save -->
+        <button class="btn-custom btn-success" onclick="save()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save
+        </button>
+    </div>
+</div>
+
+<!-- Project blocks container -->
+<div id="projects-container">
+
+{% for project_name, rows in grouped.items() %}
+<div class="project-block" data-project="{{ project_name | lower }}">
+    <div class="project-header">
+        <div class="project-title">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span class="project-name-label">{{ project_name }}</span>
+        </div>
+        <button class="btn-add-task" onclick="addTask(this)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Task
+        </button>
+    </div>
+    <div class="table-wrapper" style="margin:0; border-radius:0;">
+        <table class="table" style="margin:0;">
+            <thead>
+                <tr>
+                    <th>Task</th>
+                    <th>TC ID</th>
+                    <th style="text-align:center;">Mon</th>
+                    <th style="text-align:center;">Tue</th>
+                    <th style="text-align:center;">Wed</th>
+                    <th style="text-align:center;">Thu</th>
+                    <th style="text-align:center;">Fri</th>
+                    <th style="text-align:center;">Sat</th>
+                    <th style="text-align:center;">Sun</th>
+                    <th style="text-align:center;">Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody class="task-body">
+                {% for r in rows %}
+                <tr>
+                    <td style="display:none;"><input type="hidden" name="project" value="{{ project_name }}"></td>
+                    <td><input value="{{ r.task }}" placeholder="Task description" style="min-width:160px;"></td>
+                    <td><input name="tc_id" value="{{ r.test_case_id or '' }}" placeholder="TC-000"></td>
+                    <td><input type="number" value="{{ r.mon or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.tue or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.wed or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.thu or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.fri or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.sat or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td><input type="number" value="{{ r.sun or 0 }}" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+                    <td class="t" style="text-align:center; font-weight:600;">{{ r.total or 0 }}</td>
+                    <td style="text-align:center;">
+                        <button class="btn-remove-row" onclick="removeRow(this)" title="Remove row">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Empty state when no projects yet -->
+{% if not grouped %}
+<div id="empty-hint" style="text-align:center; padding:4rem 2rem; color:var(--text-muted);">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" style="opacity:0.4;margin-bottom:1rem;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    <p style="font-size:1rem;">No timesheet data yet. Click <strong>Add Project</strong> to get started.</p>
+</div>
+{% endif %}
+
+</div><!-- /#projects-container -->
+
+<script>
+/* ───── Helpers ───── */
+function updateTotal(el) {
+    const row = el.closest('tr');
+    const inputs = row.querySelectorAll('.h');
+    let total = 0;
+    inputs.forEach(i => total += Number(i.value || 0));
+    row.querySelector('.t').textContent = total;
+}
+
+function removeRow(btn) {
+    const tr = btn.closest('tr');
+    const tbody = tr.closest('tbody');
+    tr.remove();
+    // If tbody is empty, remove entire project block
+    if (!tbody.querySelector('tr')) {
+        tbody.closest('.project-block').remove();
+    }
+}
+
+/* ───── Add Project ───── */
+let projectCounter = 0;
+function addProject() {
+    const name = prompt('Enter project name:');
+    if (!name || !name.trim()) return;
+    document.getElementById('empty-hint') && document.getElementById('empty-hint').remove();
+    const block = buildProjectBlock(name.trim());
+    document.getElementById('projects-container').appendChild(block);
+    block.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function buildProjectBlock(projectName) {
+    const div = document.createElement('div');
+    div.className = 'project-block';
+    div.dataset.project = projectName.toLowerCase();
+    div.innerHTML = `
+        <div class="project-header">
+            <div class="project-title">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span class="project-name-label">${escHtml(projectName)}</span>
+            </div>
+            <button class="btn-add-task" onclick="addTask(this)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Task
+            </button>
+        </div>
+        <div class="table-wrapper" style="margin:0;border-radius:0;">
+            <table class="table" style="margin:0;">
+                <thead>
+                    <tr>
+                        <th>Task</th>
+                        <th>TC ID</th>
+                        <th style="text-align:center;">Mon</th>
+                        <th style="text-align:center;">Tue</th>
+                        <th style="text-align:center;">Wed</th>
+                        <th style="text-align:center;">Thu</th>
+                        <th style="text-align:center;">Fri</th>
+                        <th style="text-align:center;">Sat</th>
+                        <th style="text-align:center;">Sun</th>
+                        <th style="text-align:center;">Total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody class="task-body"></tbody>
+            </table>
+        </div>`;
+    // Add one blank task row automatically
+    const addBtn = div.querySelector('.btn-add-task');
+    addTask(addBtn);
+    return div;
+}
+
+/* ───── Add Task row ───── */
+function addTask(btn) {
+    const tbody = btn.closest('.project-block').querySelector('.task-body');
+    const tr = buildTaskRow();
+    tbody.appendChild(tr);
+}
+
+function buildTaskRow() {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td style="display:none;"><input type="hidden" name="project" value=""></td>
+        <td><input placeholder="Task description" style="min-width:160px;"></td>
+        <td><input name="tc_id" placeholder="TC-000"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td><input type="number" value="0" class="h" min="0" max="24" step="0.5" oninput="updateTotal(this)"></td>
+        <td class="t" style="text-align:center;font-weight:600;">0</td>
+        <td style="text-align:center;">
+            <button class="btn-remove-row" onclick="removeRow(this)" title="Remove row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+        </td>`;
+    return tr;
+}
+
+/* ───── Client-side project filter (CSS display:none, no page reload) ───── */
+function filterProjects(query) {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('.project-block').forEach(block => {
+        const projectName = block.dataset.project || '';
+        block.style.display = (!q || projectName.includes(q)) ? '' : 'none';
+    });
+}
+
+/* ───── Save — collects ALL rows (hidden + visible) ───── */
+function save() {
+    const weekVal = document.getElementById('week').value;
+    if (!weekVal) {
+        showToast('Please select a week first.');
+        return;
+    }
+
+    const rows = [];
+
+    // Iterate every project block (even hidden ones)
+    document.querySelectorAll('.project-block').forEach(block => {
+        const projectLabel = block.querySelector('.project-name-label');
+        const projectName = projectLabel ? projectLabel.textContent.trim() : '';
+
+        block.querySelectorAll('.task-body tr').forEach(tr => {
+            // Resolve project: hidden input value → block label fallback
+            const hiddenProjInput = tr.querySelector('input[name="project"]');
+            const proj = (hiddenProjInput && hiddenProjInput.value.trim()) ? hiddenProjInput.value.trim() : projectName;
+
+            const taskInput = tr.querySelector('td:not([style*="display:none"]) input:not([name="tc_id"]):not(.h)');
+            const tcInput   = tr.querySelector('input[name="tc_id"]');
+            const hourInputs = tr.querySelectorAll('.h');
+
+            if (hourInputs.length < 7) return;
+
+            const task = taskInput ? taskInput.value.trim() : '';
+            const tc   = tcInput  ? tcInput.value.trim()   : '';
+            const mon  = Number(hourInputs[0].value) || 0;
+            const tue  = Number(hourInputs[1].value) || 0;
+            const wed  = Number(hourInputs[2].value) || 0;
+            const thu  = Number(hourInputs[3].value) || 0;
+            const fri  = Number(hourInputs[4].value) || 0;
+            const sat  = Number(hourInputs[5].value) || 0;
+            const sun  = Number(hourInputs[6].value) || 0;
+            const total = mon + tue + wed + thu + fri + sat + sun;
+
+            if (!proj && !task) return;
+            // override proj from block label since hidden input may have empty value for JS-created rows
+            rows.push({ project: proj, task, test_case_id: tc, mon, tue, wed, thu, fri, sat, sun, total });
+        });
+    });
+
+    fetch('/save_timesheet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week: weekVal, rows })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'saved') {
+            showToast('✅ Timesheet saved successfully!');
+        } else {
+            showToast('❌ Error saving timesheet.');
+        }
+    })
+    .catch(() => showToast('❌ Network error. Could not save.'));
+}
+
+function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+}
+</script>
+
+{% endblock %}

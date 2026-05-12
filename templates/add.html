@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="auth-wrapper" style="align-items:flex-start; margin-top:2rem;">
+    <div class="modern-card auth-card" style="max-width:600px; text-align:left;">
+        <h4>Add Entry</h4>
+        <p style="margin-bottom:1.5rem; color:var(--text-muted);">Manually add a timesheet record.</p>
+        
+        <form method="post">
+            <div style="display:flex; gap:1rem; margin-bottom:1rem;">
+                <input name="project" class="form-control" placeholder="Project" required>
+                <input type="date" name="date" class="form-control" required>
+            </div>
+            <div style="display:flex; gap:1rem; margin-bottom:1rem;">
+                <input name="task_id" class="form-control" placeholder="Task ID">
+                <input name="task" class="form-control" placeholder="Task">
+            </div>
+            <textarea name="comments" placeholder="Comments" rows="3" style="width:100%; box-sizing:border-box; margin-bottom:1rem; border-radius:12px; border:1px solid var(--border-color); padding:1rem; font-family:inherit; outline:none; transition:all 0.2s;" onfocus="this.style.borderColor='var(--primary)'; this.style.boxShadow='0 0 0 3px rgba(67, 24, 255, 0.15)';" onblur="this.style.borderColor='var(--border-color)'; this.style.boxShadow='none';"></textarea>
+            
+            <div style="display:flex; gap:1rem; margin-bottom:1rem;">
+                <input name="hours" type="number" class="form-control" placeholder="Hours">
+                <input name="testcases" type="number" class="form-control" placeholder="TC">
+            </div>
+            <div style="display:flex; gap:1rem; margin-bottom:1.5rem;">
+                <input name="passed" type="number" class="form-control" placeholder="Passed">
+                <input name="failed" type="number" class="form-control" placeholder="Failed">
+            </div>
+            
+            <button class="btn-custom btn-success" style="width:100%; text-align:center;">Save Entry</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
