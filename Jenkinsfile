@@ -114,6 +114,8 @@ pipeline {
             steps {
                 echo "==> Creating deployment archive"
                 sh '''
+                    # tar exits 1 when a file changes while being read (harmless — it is writing
+                    # the archive into the same workspace it is reading). Exit code 2+ is a real error.
                     tar --exclude='.git' \
                         --exclude='.lint-venv' \
                         --exclude='.test-venv' \
@@ -126,7 +128,8 @@ pipeline {
                         --exclude='*.backup' \
                         --exclude='timesheet-app.tar.gz' \
                         --warning=no-file-changed \
-                        -czf timesheet-app.tar.gz .
+                        -czf timesheet-app.tar.gz . ; TAR_EXIT=$?
+                    [ $TAR_EXIT -le 1 ] || exit $TAR_EXIT
                     echo "Archive size: $(du -sh timesheet-app.tar.gz | cut -f1)"
                 '''
             }
