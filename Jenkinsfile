@@ -10,14 +10,14 @@ pipeline {
 
     parameters {
         string(
-            name: 'DEPLOY_HOST',
-            defaultValue: 'testing@192.168.6.65',
-            description: 'SSH target: user@host for the Ubuntu deployment server'
-        )
-        string(
             name: 'DEPLOY_DIR',
             defaultValue: '/var/www/timesheet',
-            description: 'Absolute path to the app directory on the server'
+            description: 'Absolute path to the app directory on this server'
+        )
+        string(
+            name: 'APP_USER',
+            defaultValue: 'testing',
+            description: 'OS user that owns the app directory (e.g. ubuntu, testing)'
         )
         string(
             name: 'BRANCH',
@@ -31,19 +31,18 @@ pipeline {
         )
     }
 
-    // ── Credentials stored in Jenkins Credential Store ────────
     environment {
-        // SSH private key credential ID (type: SSH Username with private key)
-        SSH_CRED_ID        = 'timesheet-deploy-key'
-        // Secret file credential containing the .env for the server
-        ENV_FILE_CRED_ID   = 'timesheet-env-file'
-        // Systemd service name (must match DEPLOY_SYSTEMD.service on server)
-        SERVICE_NAME       = 'timesheet'
+        // Secret file credential containing the .env for the app
+        ENV_FILE_CRED_ID = 'timesheet-env-file'
+        // Systemd service name (must match DEPLOY_SYSTEMD.service filename)
+        SERVICE_NAME     = 'timesheet'
         // Nginx site config name
-        NGINX_SITE         = 'timesheet'
+        NGINX_SITE       = 'timesheet'
     }
+
     stages {
 
+        // ── 1. CHECKOUT ───────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "==> Checking out branch: ${params.BRANCH}"
@@ -56,7 +55,7 @@ pipeline {
             }
         }
 
-        // ── 2. LINT / STATIC ANALYSIS ────────────────────────
+        // ── 2. LINT ───────────────────────────────────────────
         stage('Lint') {
             steps {
                 echo "==> Running flake8 static analysis"
@@ -65,8 +64,6 @@ pipeline {
                         python3 -m venv .lint-venv
                         . .lint-venv/bin/activate
                         pip install --quiet flake8
-                        # --exit-zero: always exit 0 so Jenkins does not mark FAILURE on style issues
-                        # --format=pylint: easier to count violations
                         flake8 app.py chaos_endpoints.py chaos_bot.py \
                             --max-line-length=120 \
                             --ignore=W503 \
@@ -76,8 +73,6 @@ pipeline {
                         cat flake8-report.txt
                         deactivate
                     '''
-                    // Count violations; mark build UNSTABLE (yellow) if any found,
-                    // but DO NOT fail — downstream stages will still run.
                     def violations = sh(
                         script: "grep -c '.' flake8-report.txt || true",
                         returnStdout: true
@@ -103,14 +98,12 @@ pipeline {
                     python3 -m venv .test-venv
                     . .test-venv/bin/activate
                     pip install --quiet -r requirements.txt pytest
-                    # If you have a tests/ directory, pytest discovers them automatically
                     pytest --tb=short -q || true
                     deactivate
                 '''
             }
             post {
                 always {
-                    // Publish JUnit XML if tests emit one (pytest --junitxml=results.xml)
                     junit allowEmptyResults: true, testResults: '**/test-results/*.xml'
                 }
             }
@@ -119,7 +112,7 @@ pipeline {
         // ── 4. PACKAGE ────────────────────────────────────────
         stage('Package') {
             steps {
-                echo "==> Creating deployment archive (excluding dev artefacts)"
+                echo "==> Creating deployment archive"
                 sh '''
                     tar --exclude='.git' \
                         --exclude='.lint-venv' \
@@ -139,146 +132,100 @@ pipeline {
             }
         }
 
-        // ── 5. DEPLOY ─────────────────────────────────────────
+        // ── 5. DEPLOY (local — Jenkins IS the server) ─────────
         stage('Deploy') {
             steps {
-                echo "==> Deploying to ${params.DEPLOY_HOST}:${params.DEPLOY_DIR}"
+                echo "==> Deploying locally to ${params.DEPLOY_DIR}"
 
-                // Inject the .env file (stored as a Jenkins Secret File credential)
                 withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: env.SSH_CRED_ID,
-                        keyFileVariable: 'SSH_KEY'
-                    ),
-                    file(
-                        credentialsId: env.ENV_FILE_CRED_ID,
-                        variable: 'ENV_FILE'
-                    )
+                    file(credentialsId: env.ENV_FILE_CRED_ID, variable: 'ENV_FILE')
                 ]) {
-                    // Helper: reusable SSH options
-                    script {
-                        def sshOpts = "-i ${SSH_KEY} -o StrictHostKeyChecking=no -o BatchMode=yes"
-                        def host    = params.DEPLOY_HOST
-                        def dir     = params.DEPLOY_DIR
+                    sh """
+                        set -euo pipefail
 
-                        // 5a. Upload archive + fresh .env
-                        sh """
-                            scp ${sshOpts} timesheet-app.tar.gz ${host}:/tmp/timesheet-app.tar.gz
-                            scp ${sshOpts} \${ENV_FILE} ${host}:/tmp/timesheet.env
-                        """
+                        DEPLOY_DIR="${params.DEPLOY_DIR}"
+                        APP_USER="${params.APP_USER}"
+                        SERVICE="${env.SERVICE_NAME}"
+                        NGINX_SITE="${env.NGINX_SITE}"
 
-                        // 5b. Remote deployment script (single heredoc, runs as one SSH session)
-                        sh """
-                            ssh ${sshOpts} ${host} bash -s <<'REMOTE_SCRIPT'
-                            set -euo pipefail
+                        echo "[1/7] Stopping Gunicorn service..."
+                        sudo systemctl stop \$SERVICE || true
 
-                            DEPLOY_DIR="${dir}"
-                            SERVICE="${env.SERVICE_NAME}"
-                            NGINX_SITE="${env.NGINX_SITE}"
+                        echo "[2/7] Syncing application files..."
+                        sudo mkdir -p \$DEPLOY_DIR/persistent_data
 
-                            echo "[1/7] Stopping Gunicorn service..."
-                            sudo systemctl stop \$SERVICE || true
+                        # Extract archive, skipping persistent_data so the DB is never overwritten
+                        sudo tar -xzf timesheet-app.tar.gz \
+                            --directory \$DEPLOY_DIR \
+                            --exclude='persistent_data'
 
-                            echo "[2/7] Syncing application files..."
-                            sudo mkdir -p \$DEPLOY_DIR/persistent_data
-                            # Extract archive, overwriting everything EXCEPT persistent_data
-                            sudo tar -xzf /tmp/timesheet-app.tar.gz \
-                                --directory \$DEPLOY_DIR \
-                                --exclude='persistent_data'
-                            rm -f /tmp/timesheet-app.tar.gz
+                        echo "[3/7] Installing .env..."
+                        sudo cp "\$ENV_FILE" \$DEPLOY_DIR/.env
+                        sudo chown \$APP_USER:www-data \$DEPLOY_DIR/.env
+                        sudo chmod 640 \$DEPLOY_DIR/.env
 
-                            echo "[3/7] Installing .env..."
-                            sudo cp /tmp/timesheet.env \$DEPLOY_DIR/.env
-                            sudo chown ubuntu:www-data \$DEPLOY_DIR/.env
-                            sudo chmod 640 \$DEPLOY_DIR/.env
-                            rm -f /tmp/timesheet.env
+                        echo "[4/7] Setting up Python virtual environment..."
+                        sudo python3 -m venv \$DEPLOY_DIR/venv
+                        sudo \$DEPLOY_DIR/venv/bin/pip install --quiet --upgrade pip
+                        sudo \$DEPLOY_DIR/venv/bin/pip install --quiet -r \$DEPLOY_DIR/requirements.txt
 
-                            echo "[4/7] Setting up Python virtual environment..."
-                            sudo python3 -m venv \$DEPLOY_DIR/venv
-                            sudo \$DEPLOY_DIR/venv/bin/pip install --quiet --upgrade pip
-                            sudo \$DEPLOY_DIR/venv/bin/pip install --quiet -r \$DEPLOY_DIR/requirements.txt
+                        echo "[5/7] Fixing permissions..."
+                        sudo chown -R \$APP_USER:www-data \$DEPLOY_DIR
+                        sudo chmod -R 750 \$DEPLOY_DIR
+                        sudo chmod -R 770 \$DEPLOY_DIR/persistent_data
 
-                            echo "[5/7] Fixing permissions..."
-                            sudo chown -R ubuntu:www-data \$DEPLOY_DIR
-                            sudo chmod -R 750 \$DEPLOY_DIR
-                            # persistent_data must survive across deployments
-                            sudo chmod -R 770 \$DEPLOY_DIR/persistent_data
+                        echo "[6/7] Reloading systemd service..."
+                        sudo systemctl daemon-reload
+                        sudo systemctl enable \$SERVICE
+                        sudo systemctl start \$SERVICE
 
-                            echo "[6/7] Reloading systemd service..."
-                            sudo systemctl daemon-reload
-                            sudo systemctl enable \$SERVICE
-                            sudo systemctl start \$SERVICE
+                        echo "[7/7] Reloading Nginx..."
+                        sudo cp \$DEPLOY_DIR/DEPLOY_NGINX.conf /etc/nginx/sites-available/\$NGINX_SITE
+                        sudo ln -sf /etc/nginx/sites-available/\$NGINX_SITE \
+                                    /etc/nginx/sites-enabled/\$NGINX_SITE
+                        sudo nginx -t
+                        sudo systemctl reload nginx
 
-                            echo "[7/7] Reloading Nginx..."
-                            # Install/update site config if it has changed
-                            sudo cp \$DEPLOY_DIR/DEPLOY_NGINX.conf /etc/nginx/sites-available/\$NGINX_SITE
-                            sudo ln -sf /etc/nginx/sites-available/\$NGINX_SITE \
-                                        /etc/nginx/sites-enabled/\$NGINX_SITE
-                            sudo nginx -t
-                            sudo systemctl reload nginx
-
-                            echo "==> Deployment complete!"
-REMOTE_SCRIPT
-                        """
-                    }
+                        echo "==> Deployment complete!"
+                    """
                 }
             }
         }
 
-        // ── 6. HEALTH CHECK ───────────────────────────────────
+        // ── 6. HEALTH CHECK (local curl) ──────────────────────
         stage('Health Check') {
             steps {
-                echo "==> Verifying the app is responding..."
-                withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: env.SSH_CRED_ID,
-                        keyFileVariable: 'SSH_KEY'
-                    )
-                ]) {
-                    script {
-                        def sshOpts = "-i ${SSH_KEY} -o StrictHostKeyChecking=no -o BatchMode=yes"
-                        def host    = params.DEPLOY_HOST
-
-                        // Wait up to 30 s for Gunicorn socket to appear then hit Nginx
-                        sh """
-                            ssh ${sshOpts} ${host} bash -s <<'HEALTHCHECK'
-                            set -euo pipefail
-                            for i in \$(seq 1 6); do
-                                HTTP_STATUS=\$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
-                                echo "Attempt \$i — HTTP \$HTTP_STATUS"
-                                if [ "\$HTTP_STATUS" = "200" ] || [ "\$HTTP_STATUS" = "302" ]; then
-                                    echo "Health check PASSED"
-                                    exit 0
-                                fi
-                                sleep 5
-                            done
-                            echo "Health check FAILED after 30 seconds"
-                            sudo systemctl status timesheet --no-pager
-                            exit 1
-HEALTHCHECK
-                        """
-                    }
-                }
+                echo "==> Verifying the app is responding on localhost..."
+                sh '''
+                    set -euo pipefail
+                    for i in $(seq 1 6); do
+                        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
+                        echo "Attempt $i — HTTP $HTTP_STATUS"
+                        if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
+                            echo "Health check PASSED"
+                            exit 0
+                        fi
+                        sleep 5
+                    done
+                    echo "Health check FAILED after 30 seconds"
+                    sudo systemctl status timesheet --no-pager || true
+                    exit 1
+                '''
             }
         }
 
     } // end stages
 
-    // ── Post-pipeline actions ─────────────────────────────────
     post {
         success {
-            echo "Pipeline SUCCESS — Timesheet app is live on ${params.DEPLOY_HOST}"
+            echo "Pipeline SUCCESS — Timesheet app is live at http://localhost/"
         }
         failure {
             echo "Pipeline FAILED — check the logs above for details"
-            // Add emailext / Slack notification here if needed
-            // mail to: 'team@example.com', subject: "BUILD FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}", body: "See ${env.BUILD_URL}"
         }
         always {
-            // Clean up temporary files from workspace
             sh 'rm -f timesheet-app.tar.gz || true'
             cleanWs()
         }
     }
-
 }
