@@ -144,7 +144,7 @@ pipeline {
                 echo "==> Deploying locally to ${params.DEPLOY_DIR}"
                 sh """
                     #!/bin/bash
-                    set -euo pipefail
+                    set -eu pipefail
                     echo "Pre-Requisites:" 
 
                     DEPLOY_DIR="${params.DEPLOY_DIR}"
