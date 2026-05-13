@@ -145,6 +145,7 @@ pipeline {
                 sh """
                     #!/bin/bash
                     set -euo pipefail
+                    echo "Pre-Requisites:" 
 
                     DEPLOY_DIR="${params.DEPLOY_DIR}"
                     APP_USER="${params.APP_USER}"
