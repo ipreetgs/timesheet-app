@@ -114,10 +114,6 @@ pipeline {
             steps {
                 echo "==> Creating deployment archive"
                 sh '''
-                    # Jenkins sh runs with implicit `set -e`.
-                    # Temporarily disable it so tar exit code 1 (file changed while reading)
-                    # does not abort the shell before we can inspect it.
-                    # Exit code 2+ is a genuine tar error and should still fail the build.
                     set +e
                     tar --exclude='.git' \
                         --exclude='.lint-venv' \
