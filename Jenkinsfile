@@ -131,6 +131,8 @@ pipeline {
                         --exclude='*.sock' \
                         --exclude='database.db' \
                         --exclude='*.backup' \
+                        --exclude='timesheet-app.tar.gz' \
+                        --warning=no-file-changed \
                         -czf timesheet-app.tar.gz .
                     echo "Archive size: $(du -sh timesheet-app.tar.gz | cut -f1)"
                 '''
