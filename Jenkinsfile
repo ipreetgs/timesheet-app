@@ -143,6 +143,7 @@ pipeline {
             steps {
                 echo "==> Deploying locally to ${params.DEPLOY_DIR}"
                 sh """
+                    #!/bin/bash
                     set -euo pipefail
 
                     DEPLOY_DIR="${params.DEPLOY_DIR}"
@@ -194,6 +195,7 @@ pipeline {
             steps {
                 echo "==> Verifying the app is responding on localhost..."
                 sh '''
+                    #!/bin/bash
                     set -euo pipefail
                     for i in $(seq 1 6); do
                         HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
