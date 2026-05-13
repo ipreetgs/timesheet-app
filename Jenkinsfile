@@ -32,12 +32,8 @@ pipeline {
     }
 
     environment {
-        // Secret file credential containing the .env for the app
-        ENV_FILE_CRED_ID = 'timesheet-env-file'
-        // Systemd service name (must match DEPLOY_SYSTEMD.service filename)
-        SERVICE_NAME     = 'timesheet'
-        // Nginx site config name
-        NGINX_SITE       = 'timesheet'
+        SERVICE_NAME = 'timesheet'
+        NGINX_SITE   = 'timesheet'
     }
 
     stages {
@@ -114,6 +110,9 @@ pipeline {
             steps {
                 echo "==> Creating deployment archive"
                 sh '''
+                    # Jenkins sh runs with implicit set -e.
+                    # tar exits 1 when a file changes while being read (harmless).
+                    # Temporarily disable set -e so we can inspect the exit code ourselves.
                     set +e
                     tar --exclude='.git' \
                         --exclude='.lint-venv' \
@@ -143,59 +142,50 @@ pipeline {
         stage('Deploy') {
             steps {
                 echo "==> Deploying locally to ${params.DEPLOY_DIR}"
+                sh """
+                    set -euo pipefail
 
-                withCredentials([
-                    file(credentialsId: env.ENV_FILE_CRED_ID, variable: 'ENV_FILE')
-                ]) {
-                    sh """
-                        set -euo pipefail
+                    DEPLOY_DIR="${params.DEPLOY_DIR}"
+                    APP_USER="${params.APP_USER}"
+                    SERVICE="${env.SERVICE_NAME}"
+                    NGINX_SITE="${env.NGINX_SITE}"
 
-                        DEPLOY_DIR="${params.DEPLOY_DIR}"
-                        APP_USER="${params.APP_USER}"
-                        SERVICE="${env.SERVICE_NAME}"
-                        NGINX_SITE="${env.NGINX_SITE}"
+                    echo "[1/6] Stopping Gunicorn service..."
+                    sudo systemctl stop \$SERVICE || true
 
-                        echo "[1/7] Stopping Gunicorn service..."
-                        sudo systemctl stop \$SERVICE || true
+                    echo "[2/6] Syncing application files..."
+                    sudo mkdir -p \$DEPLOY_DIR/persistent_data
 
-                        echo "[2/7] Syncing application files..."
-                        sudo mkdir -p \$DEPLOY_DIR/persistent_data
+                    # Extract archive — .env and persistent_data are never overwritten
+                    sudo tar -xzf timesheet-app.tar.gz \
+                        --directory \$DEPLOY_DIR \
+                        --exclude='persistent_data' \
+                        --exclude='.env'
 
-                        # Extract archive, skipping persistent_data so the DB is never overwritten
-                        sudo tar -xzf timesheet-app.tar.gz \
-                            --directory \$DEPLOY_DIR \
-                            --exclude='persistent_data'
+                    echo "[3/6] Setting up Python virtual environment..."
+                    sudo python3 -m venv \$DEPLOY_DIR/venv
+                    sudo \$DEPLOY_DIR/venv/bin/pip install --quiet --upgrade pip
+                    sudo \$DEPLOY_DIR/venv/bin/pip install --quiet -r \$DEPLOY_DIR/requirements.txt
 
-                        echo "[3/7] Installing .env..."
-                        sudo cp "\$ENV_FILE" \$DEPLOY_DIR/.env
-                        sudo chown \$APP_USER:www-data \$DEPLOY_DIR/.env
-                        sudo chmod 640 \$DEPLOY_DIR/.env
+                    echo "[4/6] Fixing permissions..."
+                    sudo chown -R \$APP_USER:www-data \$DEPLOY_DIR
+                    sudo chmod -R 750 \$DEPLOY_DIR
+                    sudo chmod -R 770 \$DEPLOY_DIR/persistent_data
 
-                        echo "[4/7] Setting up Python virtual environment..."
-                        sudo python3 -m venv \$DEPLOY_DIR/venv
-                        sudo \$DEPLOY_DIR/venv/bin/pip install --quiet --upgrade pip
-                        sudo \$DEPLOY_DIR/venv/bin/pip install --quiet -r \$DEPLOY_DIR/requirements.txt
+                    echo "[5/6] Reloading systemd service..."
+                    sudo systemctl daemon-reload
+                    sudo systemctl enable \$SERVICE
+                    sudo systemctl start \$SERVICE
 
-                        echo "[5/7] Fixing permissions..."
-                        sudo chown -R \$APP_USER:www-data \$DEPLOY_DIR
-                        sudo chmod -R 750 \$DEPLOY_DIR
-                        sudo chmod -R 770 \$DEPLOY_DIR/persistent_data
+                    echo "[6/6] Reloading Nginx..."
+                    sudo cp \$DEPLOY_DIR/DEPLOY_NGINX.conf /etc/nginx/sites-available/\$NGINX_SITE
+                    sudo ln -sf /etc/nginx/sites-available/\$NGINX_SITE \
+                                /etc/nginx/sites-enabled/\$NGINX_SITE
+                    sudo nginx -t
+                    sudo systemctl reload nginx
 
-                        echo "[6/7] Reloading systemd service..."
-                        sudo systemctl daemon-reload
-                        sudo systemctl enable \$SERVICE
-                        sudo systemctl start \$SERVICE
-
-                        echo "[7/7] Reloading Nginx..."
-                        sudo cp \$DEPLOY_DIR/DEPLOY_NGINX.conf /etc/nginx/sites-available/\$NGINX_SITE
-                        sudo ln -sf /etc/nginx/sites-available/\$NGINX_SITE \
-                                    /etc/nginx/sites-enabled/\$NGINX_SITE
-                        sudo nginx -t
-                        sudo systemctl reload nginx
-
-                        echo "==> Deployment complete!"
-                    """
-                }
+                    echo "==> Deployment complete!"
+                """
             }
         }
 
