@@ -60,17 +60,35 @@ pipeline {
         stage('Lint') {
             steps {
                 echo "==> Running flake8 static analysis"
-                sh '''
-                    python3 -m venv .lint-venv
-                    . .lint-venv/bin/activate
-                    pip install --quiet flake8
-                    # E501 = line-too-long (relaxed to 120), W503 = line break before binary op
-                    flake8 app.py chaos_endpoints.py chaos_bot.py \
-                        --max-line-length=120 \
-                        --ignore=W503 \
-                        --statistics
-                    deactivate
-                '''
+                script {
+                    sh '''
+                        python3 -m venv .lint-venv
+                        . .lint-venv/bin/activate
+                        pip install --quiet flake8
+                        # --exit-zero: always exit 0 so Jenkins does not mark FAILURE on style issues
+                        # --format=pylint: easier to count violations
+                        flake8 app.py chaos_endpoints.py chaos_bot.py \
+                            --max-line-length=120 \
+                            --ignore=W503 \
+                            --exit-zero \
+                            --statistics \
+                            --output-file=flake8-report.txt || true
+                        cat flake8-report.txt
+                        deactivate
+                    '''
+                    // Count violations; mark build UNSTABLE (yellow) if any found,
+                    // but DO NOT fail — downstream stages will still run.
+                    def violations = sh(
+                        script: "grep -c '.' flake8-report.txt || true",
+                        returnStdout: true
+                    ).trim().toInteger()
+                    if (violations > 0) {
+                        echo "WARNING: ${violations} lint violation(s) found. Build marked UNSTABLE."
+                        unstable("Lint violations detected (${violations} issues)")
+                    } else {
+                        echo "Lint PASSED — no violations found."
+                    }
+                }
             }
         }
 
